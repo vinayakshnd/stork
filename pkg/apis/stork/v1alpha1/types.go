@@ -110,6 +110,8 @@ const (
 	ClusterPairStatusDegraded ClusterPairStatusType = "Degraded"
 	// ClusterPairStatusDeleting for when pairing is being deleted
 	ClusterPairStatusDeleting ClusterPairStatusType = "Deleting"
+	// ClusterPairStatusNotProvided for when pairing information is not provided
+	ClusterPairStatusNotProvided ClusterPairStatusType = "NotProvided"
 )
 
 // ClusterPairStatus is the status of the cluster pair
@@ -140,6 +142,7 @@ type MigrationSpec struct {
 	ClusterPair       string            `json:"clusterPair"`
 	Namespaces        []string          `json:"namespaces"`
 	IncludeResources  bool              `json:"includeResources"`
+	IncludeVolumes    bool              `json:"includeVolumes"`
 	StartApplications bool              `json:"startApplications"`
 	Selectors         map[string]string `json:"selectors"`
 	PreExecRule       string            `json:"preExecRule"`

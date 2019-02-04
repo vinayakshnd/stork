@@ -228,16 +228,24 @@ func (m *MigrationController) Handle(ctx context.Context, event sdk.Event) error
 			}
 			fallthrough
 		case stork_api.MigrationStageVolumes:
-
-			err := m.migrateVolumes(migration, terminationChannels)
-			if err != nil {
-				message := fmt.Sprintf("Error migrating volumes: %v", err)
-				log.MigrationLog(migration).Errorf(message)
-				m.Recorder.Event(migration,
-					v1.EventTypeWarning,
-					string(stork_api.MigrationStatusFailed),
-					message)
-				return nil
+			if migration.Spec.IncludeVolumes {
+				err := m.migrateVolumes(migration, terminationChannels)
+				if err != nil {
+					message := fmt.Sprintf("Error migrating volumes: %v", err)
+					log.MigrationLog(migration).Errorf(message)
+					m.Recorder.Event(migration,
+						v1.EventTypeWarning,
+						string(stork_api.MigrationStatusFailed),
+						message)
+					return nil
+				}
+			} else {
+				migration.Status.Stage = stork_api.MigrationStageApplications
+				migration.Status.Status = stork_api.MigrationStatusInitial
+				err := sdk.Update(migration)
+				if err != nil {
+					return err
+				}
 			}
 		case stork_api.MigrationStageApplications:
 			err := m.migrateResources(migration)
@@ -924,8 +932,9 @@ func (m *MigrationController) applyResources(
 
 		_, err = client.CoreV1().Namespaces().Create(&v1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:   namespace.Name,
-				Labels: namespace.Labels,
+				Name:        namespace.Name,
+				Labels:      namespace.Labels,
+				Annotations: namespace.Annotations,
 			},
 		})
 		if err != nil && !apierrors.IsAlreadyExists(err) {
