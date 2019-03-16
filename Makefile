@@ -44,8 +44,14 @@ vendor-update:
 vendor:
 	go mod vendor
 
+# In module mode, 'go get' has a side-effect of updating the go.mod
+# file.  We do not want to update go.mod when installing tools.
+# As a workaround, when installing a tool, cd to /tmp and turn off
+# module mode.  This should be solved in:
+#   https://github.com/golang/go/issues/30515
+#   https://github.com/golang/go/issues/24250
 lint:
-	go get -v golang.org/x/lint/golint
+	(cd /tmp && GO111MODULE=off go get -v golang.org/x/lint/golint)
 	for file in $(GO_FILES); do \
 		golint $${file}; \
 		if [ -n "$$(golint $${file})" ]; then \
@@ -57,13 +63,13 @@ vet:
 	go vet $(PKGS)
 
 $(GOPATH)/bin/gosimple:
-	go get -u honnef.co/go/tools/cmd/gosimple
+	(cd /tmp && GO111MODULE=off go get -u honnef.co/go/tools/cmd/gosimple)
 
 simple: $(GOPATH)/bin/gosimple
 	$(GOPATH)/bin/gosimple $(PKGS)
 
 errcheck:
-	go get -v github.com/kisielk/errcheck
+	(cd /tmp && GO111MODULE=off go get -v github.com/kisielk/errcheck)
 	errcheck -verbose -blank $(PKGS)
 
 check-fmt:
