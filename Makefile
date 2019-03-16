@@ -20,7 +20,7 @@ endif
 HAS_GOMODULES := $(shell go help mod why 2> /dev/null)
 ifdef HAS_GOMODULES
 export GO111MODULE=on
-MODVENDOR_FLAG = -mod=vendor
+export GOFLAGS= -mod=vendor
 endif
 
 RELEASE_VER := 2.2.0
