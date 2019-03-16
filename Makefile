@@ -39,10 +39,10 @@ BUILD_OPTIONS := -ldflags=$(LDFLAGS)
 all: stork storkctl cmdexecutor vet lint simple
 
 vendor-update:
-	dep ensure -update
+	go mod download
 
 vendor:
-	dep ensure
+	go mod vendor
 
 lint:
 	go get -v golang.org/x/lint/golint
