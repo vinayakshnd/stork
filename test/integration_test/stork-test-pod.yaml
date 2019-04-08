@@ -46,7 +46,9 @@ spec:
     image: openstorage/stork_test:latest
     securityContext:
       privileged: false
-    volumeMounts: []
+    volumeMounts: 
+    - name: testresults 
+        mountPath: /testresults
     name: stork
     env:
     - name: TORPEDO_SSH_USER
@@ -55,6 +57,11 @@ spec:
       value: password
   hostNetwork: false
   hostPID: false
-  volumes: []
+  volumes: 
+    - name: testresults 
+      hostPath: 
+        path: /testresults
+        type: DirectoryOrCreate
+
   serviceAccountName: stork-test-account
   restartPolicy: Never

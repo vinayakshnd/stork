@@ -97,11 +97,12 @@ func TestMain(t *testing.T) {
 	if passed := t.Run("setup", setup); !passed {
 		t.FailNow()
 	}
-	t.Run("Extender", testExtender)
-	t.Run("HealthMonitor", testHealthMonitor)
-	t.Run("Snapshot", testSnapshot)
-	t.Run("CmdExecutor", asyncPodCommandTest)
-	t.Run("Migration", testMigration)
+	t.Run("Mock", testMock)
+	//t.Run("Extender", testExtender)
+	//t.Run("HealthMonitor", testHealthMonitor)
+	//t.Run("Snapshot", testSnapshot)
+	//t.Run("CmdExecutor", asyncPodCommandTest)
+	//t.Run("Migration", testMigration)
 }
 
 func generateInstanceID(t *testing.T, testName string) string {

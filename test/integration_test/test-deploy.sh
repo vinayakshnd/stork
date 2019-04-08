@@ -43,6 +43,12 @@ done
 apk update
 apk add jq
 
+TESTRESULTS_VOLUME="{ \"name\": \"testresults\", \"hostPath\": { \"path\": \"/testresults/\", \"type\": \"DirectoryOrCreate\" } }"
+TESTRESULTS_MOUNT="{ \"name\": \"testresults\", \"mountPath\": \"/testresults/\" }"
+
+VOLUMES="${TESTRESULTS_VOLUME}"
+VOLUME_MOUNTS="${TESTRESULTS_MOUNT}"
+
 if [ "$initializer" == "true" ] ; then
     # Remove schedule name from all specs
     find /testspecs/specs -name '*.yaml' | xargs sed -i '/schedulerName: stork/d'
