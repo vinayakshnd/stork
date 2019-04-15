@@ -18,6 +18,22 @@ limitations under the License.
 
 package v1alpha1
 
+// ApplicationBackupListerExpansion allows custom methods to be added to
+// ApplicationBackupLister.
+type ApplicationBackupListerExpansion interface{}
+
+// ApplicationBackupNamespaceListerExpansion allows custom methods to be added to
+// ApplicationBackupNamespaceLister.
+type ApplicationBackupNamespaceListerExpansion interface{}
+
+// ApplicationRestoreListerExpansion allows custom methods to be added to
+// ApplicationRestoreLister.
+type ApplicationRestoreListerExpansion interface{}
+
+// ApplicationRestoreNamespaceListerExpansion allows custom methods to be added to
+// ApplicationRestoreNamespaceLister.
+type ApplicationRestoreNamespaceListerExpansion interface{}
+
 // ClusterDomainUpdateListerExpansion allows custom methods to be added to
 // ClusterDomainUpdateLister.
 type ClusterDomainUpdateListerExpansion interface{}

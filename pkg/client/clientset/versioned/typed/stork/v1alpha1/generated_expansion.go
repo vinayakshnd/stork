@@ -18,6 +18,10 @@ limitations under the License.
 
 package v1alpha1
 
+type ApplicationBackupExpansion interface{}
+
+type ApplicationRestoreExpansion interface{}
+
 type ClusterDomainUpdateExpansion interface{}
 
 type ClusterDomainsStatusExpansion interface{}
