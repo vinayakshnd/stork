@@ -28,6 +28,8 @@ type Interface interface {
 	ApplicationBackups() ApplicationBackupInformer
 	// ApplicationRestores returns a ApplicationRestoreInformer.
 	ApplicationRestores() ApplicationRestoreInformer
+	// BackupLocations returns a BackupLocationInformer.
+	BackupLocations() BackupLocationInformer
 	// ClusterDomainUpdates returns a ClusterDomainUpdateInformer.
 	ClusterDomainUpdates() ClusterDomainUpdateInformer
 	// ClusterDomainsStatuses returns a ClusterDomainsStatusInformer.
@@ -69,6 +71,11 @@ func (v *version) ApplicationBackups() ApplicationBackupInformer {
 // ApplicationRestores returns a ApplicationRestoreInformer.
 func (v *version) ApplicationRestores() ApplicationRestoreInformer {
 	return &applicationRestoreInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// BackupLocations returns a BackupLocationInformer.
+func (v *version) BackupLocations() BackupLocationInformer {
+	return &backupLocationInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // ClusterDomainUpdates returns a ClusterDomainUpdateInformer.

@@ -22,6 +22,8 @@ type ApplicationBackupExpansion interface{}
 
 type ApplicationRestoreExpansion interface{}
 
+type BackupLocationExpansion interface{}
+
 type ClusterDomainUpdateExpansion interface{}
 
 type ClusterDomainsStatusExpansion interface{}

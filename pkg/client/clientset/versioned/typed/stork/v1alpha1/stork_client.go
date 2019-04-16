@@ -29,6 +29,7 @@ type StorkV1alpha1Interface interface {
 	RESTClient() rest.Interface
 	ApplicationBackupsGetter
 	ApplicationRestoresGetter
+	BackupLocationsGetter
 	ClusterDomainUpdatesGetter
 	ClusterDomainsStatusesGetter
 	ClusterPairsGetter
@@ -52,6 +53,10 @@ func (c *StorkV1alpha1Client) ApplicationBackups(namespace string) ApplicationBa
 
 func (c *StorkV1alpha1Client) ApplicationRestores(namespace string) ApplicationRestoreInterface {
 	return newApplicationRestores(c, namespace)
+}
+
+func (c *StorkV1alpha1Client) BackupLocations(namespace string) BackupLocationInterface {
+	return newBackupLocations(c, namespace)
 }
 
 func (c *StorkV1alpha1Client) ClusterDomainUpdates() ClusterDomainUpdateInterface {
