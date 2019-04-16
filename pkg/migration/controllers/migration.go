@@ -8,20 +8,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heptio/ark/pkg/discovery"
 	"github.com/heptio/ark/pkg/util/collections"
 	"github.com/libopenstorage/stork/drivers/volume"
 	"github.com/libopenstorage/stork/pkg/apis/stork"
 	stork_api "github.com/libopenstorage/stork/pkg/apis/stork/v1alpha1"
 	"github.com/libopenstorage/stork/pkg/controller"
 	"github.com/libopenstorage/stork/pkg/log"
+	"github.com/libopenstorage/stork/pkg/resourcecollector"
 	"github.com/libopenstorage/stork/pkg/rule"
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/portworx/sched-ops/k8s"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -33,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/registry/core/service/portallocator"
 )
@@ -49,38 +47,13 @@ const (
 type MigrationController struct {
 	Driver                  volume.Driver
 	Recorder                record.EventRecorder
-	discoveryHelper         discovery.Helper
-	dynamicInterface        dynamic.Interface
+	ResourceCollector       resourcecollector.ResourceCollector
 	migrationAdminNamespace string
 }
 
 // Init Initialize the migration controller
 func (m *MigrationController) Init(migrationAdminNamespace string) error {
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("Error getting cluster config: %v", err)
-	}
-
-	aeclient, err := apiextensionsclient.NewForConfig(config)
-	if err != nil {
-		return fmt.Errorf("Error getting apiextention client, %v", err)
-	}
-
-	err = m.createCRD()
-	if err != nil {
-		return err
-	}
-
-	discoveryClient := aeclient.Discovery()
-	m.discoveryHelper, err = discovery.NewHelper(discoveryClient, logrus.New())
-	if err != nil {
-		return err
-	}
-	err = m.discoveryHelper.Refresh()
-	if err != nil {
-		return err
-	}
-	m.dynamicInterface, err = dynamic.NewForConfig(config)
+	err := m.createCRD()
 	if err != nil {
 		return err
 	}
@@ -689,9 +662,43 @@ func (m *MigrationController) migrateResources(migration *stork_api.Migration) e
 		return fmt.Errorf("Scheduler Cluster pair is not ready. Status: %v", schedulerStatus)
 	}
 
-	allObjects, err := m.getResources(migration)
+	allObjects, err := m.ResourceCollector.GetResources(migration.Spec.Namespaces, migration.Spec.Selectors)
 	if err != nil {
+		m.Recorder.Event(migration,
+			v1.EventTypeWarning,
+			string(stork_api.MigrationStatusFailed),
+			fmt.Sprintf("Error getting resource: %v", err))
 		log.MigrationLog(migration).Errorf("Error getting resources: %v", err)
+		return err
+	}
+
+	// Save the collected resources infos in the status
+	resourceInfos := make([]*stork_api.ResourceInfo, 0)
+	for _, obj := range allObjects {
+		metadata, err := meta.Accessor(obj)
+		if err != nil {
+			return err
+		}
+
+		resourceInfo := &stork_api.ResourceInfo{
+			Name:      metadata.GetName(),
+			Namespace: metadata.GetNamespace(),
+			Status:    stork_api.MigrationStatusInProgress,
+		}
+		gvk := obj.GetObjectKind().GroupVersionKind()
+		resourceInfo.Kind = gvk.Kind
+		resourceInfo.Group = gvk.Group
+		// core Group doesn't have a name, so override it
+		if resourceInfo.Group == "" {
+			resourceInfo.Group = "core"
+		}
+		resourceInfo.Version = gvk.Version
+
+		resourceInfos = append(resourceInfos, resourceInfo)
+	}
+	migration.Status.Resources = resourceInfos
+	err = sdk.Update(migration)
+	if err != nil {
 		return err
 	}
 
@@ -730,159 +737,29 @@ func (m *MigrationController) migrateResources(migration *stork_api.Migration) e
 	return nil
 }
 
-func (m *MigrationController) getResources(
-	migration *stork_api.Migration,
-) ([]runtime.Unstructured, error) {
-	err := m.discoveryHelper.Refresh()
-	if err != nil {
-		return nil, err
-	}
-	allObjects := make([]runtime.Unstructured, 0)
-	resourceInfos := make([]*stork_api.ResourceInfo, 0)
-
-	for _, group := range m.discoveryHelper.Resources() {
-		groupVersion, err := schema.ParseGroupVersion(group.GroupVersion)
-		if err != nil {
-			return nil, err
-		}
-		if groupVersion.Group == "extensions" {
-			continue
-		}
-
-		resourceMap := make(map[types.UID]bool)
-		for _, resource := range group.APIResources {
-			if !resourceToBeMigrated(migration, resource) {
-				continue
-			}
-
-			for _, ns := range migration.Spec.Namespaces {
-				var dynamicClient dynamic.ResourceInterface
-				if !resource.Namespaced {
-					dynamicClient = m.dynamicInterface.Resource(groupVersion.WithResource(resource.Name))
-				} else {
-					dynamicClient = m.dynamicInterface.Resource(groupVersion.WithResource(resource.Name)).Namespace(ns)
-				}
-
-				var selectors string
-				// PVs don't get the labels from their PVCs, so don't use
-				// the label selector
-				if resource.Kind != "PersistentVolume" {
-					selectors = labels.Set(migration.Spec.Selectors).String()
-				}
-				objectsList, err := dynamicClient.List(metav1.ListOptions{
-					LabelSelector: selectors,
-				})
-				if err != nil {
-					return nil, err
-				}
-				objects, err := meta.ExtractList(objectsList)
-				if err != nil {
-					return nil, err
-				}
-				for _, o := range objects {
-					runtimeObject, ok := o.(runtime.Unstructured)
-					if !ok {
-						return nil, fmt.Errorf("Error casting object: %v", o)
-					}
-
-					migrate, err := m.objectToBeMigrated(migration, resourceMap, runtimeObject, ns)
-					if err != nil {
-						return nil, fmt.Errorf("Error processing object %v: %v", runtimeObject, err)
-					}
-					if !migrate {
-						continue
-					}
-					metadata, err := meta.Accessor(runtimeObject)
-					if err != nil {
-						return nil, err
-					}
-					resourceInfo := &stork_api.ResourceInfo{
-						Name:      metadata.GetName(),
-						Namespace: metadata.GetNamespace(),
-						Status:    stork_api.MigrationStatusInProgress,
-					}
-					resourceInfo.Kind = resource.Kind
-					resourceInfo.Group = groupVersion.Group
-					// core Group doesn't have a name, so override it
-					if resourceInfo.Group == "" {
-						resourceInfo.Group = "core"
-					}
-					resourceInfo.Version = groupVersion.Version
-					resourceInfos = append(resourceInfos, resourceInfo)
-					allObjects = append(allObjects, runtimeObject)
-					resourceMap[metadata.GetUID()] = true
-				}
-			}
-		}
-		migration.Status.Resources = resourceInfos
-		err = sdk.Update(migration)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return allObjects, nil
-}
-
 func (m *MigrationController) prepareResources(
 	migration *stork_api.Migration,
 	objects []runtime.Unstructured,
 ) error {
 	for _, o := range objects {
-		content := o.UnstructuredContent()
-		// Status shouldn't be migrated between clusters
-		delete(content, "status")
+		metadata, err := meta.Accessor(o)
+		if err != nil {
+			return err
+		}
 
 		switch o.GetObjectKind().GroupVersionKind().Kind {
 		case "PersistentVolume":
-			updatedObject, err := m.preparePVResource(migration, o)
+			updatedObject, err := m.preparePVResource(o)
 			if err != nil {
-				m.updateResourceStatus(
-					migration,
-					o,
-					stork_api.MigrationStatusFailed,
-					fmt.Sprintf("Error preparing PV resource: %v", err))
-				continue
+				return fmt.Errorf("Error preparing PV resource %v: %v", metadata.GetName(), err)
 			}
 			o = updatedObject
 		case "Deployment", "StatefulSet":
 			updatedObject, err := m.prepareApplicationResource(migration, o)
 			if err != nil {
-				m.updateResourceStatus(
-					migration,
-					o,
-					stork_api.MigrationStatusFailed,
-					fmt.Sprintf("Error preparing Application resource: %v", err))
-				continue
+				return fmt.Errorf("Error preparing %v resource %v: %v", o.GetObjectKind().GroupVersionKind().Kind, metadata.GetName(), err)
 			}
 			o = updatedObject
-		case "Service":
-			updatedObject, err := m.prepareServiceResource(migration, o)
-			if err != nil {
-				m.updateResourceStatus(
-					migration,
-					o,
-					stork_api.MigrationStatusFailed,
-					fmt.Sprintf("Error preparing Service resource: %v", err))
-				continue
-			}
-			o = updatedObject
-		}
-		metadata, err := collections.GetMap(content, "metadata")
-		if err != nil {
-			m.updateResourceStatus(
-				migration,
-				o,
-				stork_api.MigrationStatusFailed,
-				fmt.Sprintf("Error getting metadata for resource: %v", err))
-			continue
-		}
-		for key := range metadata {
-			switch key {
-			case "name", "namespace", "labels", "annotations":
-			default:
-				delete(metadata, key)
-			}
 		}
 	}
 	return nil
@@ -939,16 +816,8 @@ func (m *MigrationController) prepareServiceResource(
 }
 
 func (m *MigrationController) preparePVResource(
-	migration *stork_api.Migration,
 	object runtime.Unstructured,
 ) (runtime.Unstructured, error) {
-	spec, err := collections.GetMap(object.UnstructuredContent(), "spec")
-	if err != nil {
-		return nil, err
-	}
-	delete(spec, "claimRef")
-	delete(spec, "storageClassName")
-
 	return m.Driver.UpdateMigratedPersistentVolumeSpec(object)
 }
 
